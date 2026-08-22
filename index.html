@@ -926,25 +926,22 @@ function setOcrProgressHandler(fn){ ocrProgressHandler = fn; }
 async function getOcrWorker(){
   if(!ocrWorkerPromise){
     ocrWorkerPromise = (async () => {
-      // Tesseract.js's own script loads fine (it's why we get this far at all),
-      // but by default it separately fetches its WASM engine and language data
-      // from OTHER CDN domains it auto-resolves (often unpkg.com and
-      // tessdata.projectnaptha.com). If either of those is blocked — a
-      // corporate proxy, an ad-blocker, or a privacy extension — the worker's
-      // engine never finishes initializing, and every OCR call then fails with
-      // a "cannot read properties of null" error, no matter what we tune.
-      // Pinning both to jsdelivr (the CDN we already know loads on this page)
-      // removes that extra point of failure.
-      const worker = await Tesseract.createWorker('eng', 1, {
+      // Root cause of every earlier "Cannot read properties of null" crash:
+      // in the tesseract.js v4 series, createWorker() does NOT auto-load the
+      // language or initialize the engine (that only became automatic in v5).
+      // Skipping loadLanguage()/initialize() leaves the internal WASM module
+      // null forever, so every later call (setParameters, recognize) fails.
+      // See https://github.com/naptha/tesseract.js/issues/354.
+      const worker = await Tesseract.createWorker({
         workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@4.1.1/dist/worker.min.js',
         corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@4.0.4/tesseract-core.wasm.js',
         langPath: 'https://cdn.jsdelivr.net/gh/naptha/tessdata@gh-pages/4.0.0_best',
         logger: m => { if(ocrProgressHandler) ocrProgressHandler(m); }
       });
-      // Best-effort page-segmentation tuning — some Tesseract.js builds throw
-      // here if called before the engine has fully settled, so never let this
-      // take the whole OCR pipeline down with it; just fall back to the
-      // engine's default segmentation if it fails.
+      await worker.loadLanguage('eng');
+      await worker.initialize('eng');
+      // Best-effort page-segmentation tuning — now safe to attempt since the
+      // engine is actually initialized, but keep it non-fatal regardless.
       try{
         await worker.setParameters({ tessedit_pageseg_mode: '6' });
       }catch(e){
