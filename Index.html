@@ -1,0 +1,1602 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Statement Ledger &mdash; Bank Statement Analyzer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@4.1.1/dist/tesseract.min.js"></script>
+<style>
+  :root{
+    --paper:#F3F5FA;
+    --paper-line:#E3E7F0;
+    --ink:#12172B;
+    --ink-soft:#626B82;
+    --gold:#B8862E;
+    --stamp-red:#DC2626;
+    --stamp-green:#059669;
+    --card:#FFFFFF;
+    --surface:rgba(255,255,255,.72);
+    --surface-border:rgba(18,23,43,.09);
+    --glow-1:#6C5CE7;
+    --glow-2:#17C9A8;
+    --glow-opacity:.10;
+    --row-hover:rgba(18,23,43,.035);
+    --mono:'IBM Plex Mono', ui-monospace, monospace;
+    --font-display:'Sora', 'Inter', sans-serif;
+    --font-body:'Inter', sans-serif;
+  }
+  html[data-theme="dark"]{
+    --paper:#0A0C12;
+    --paper-line:#232838;
+    --ink:#EDEFF7;
+    --ink-soft:#8B93A7;
+    --gold:#E8B563;
+    --stamp-red:#FB7185;
+    --stamp-green:#34D399;
+    --card:#141824;
+    --surface:rgba(255,255,255,.045);
+    --surface-border:rgba(255,255,255,.09);
+    --glow-opacity:.28;
+    --row-hover:rgba(255,255,255,.035);
+  }
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{
+    margin:0;
+    background:var(--paper);
+    color:var(--ink);
+    font-family:var(--font-body);
+    padding:0 0 70px 0;
+    position:relative;
+    transition:background-color .25s ease, color .25s ease;
+  }
+  body::before, body::after{
+    content:'';
+    position:fixed;
+    width:520px;height:520px;
+    border-radius:50%;
+    filter:blur(90px);
+    pointer-events:none;
+    z-index:0;
+    opacity:var(--glow-opacity);
+  }
+  body::before{top:-160px;left:-120px;background:var(--glow-1);}
+  body::after{bottom:-200px;right:-140px;background:var(--glow-2);}
+
+  .cover, .wrap{position:relative;z-index:1;}
+
+  .cover{padding:56px 40px 46px;}
+  .cover .eyebrow{
+    font-family:var(--mono);
+    letter-spacing:.22em;
+    font-size:11px;
+    text-transform:uppercase;
+    color:var(--ink-soft);
+    margin-bottom:18px;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+  }
+  .eyebrow-pill{
+    background:var(--surface);
+    border:1px solid var(--surface-border);
+    padding:6px 14px;
+    border-radius:100px;
+    backdrop-filter:blur(10px);
+  }
+  .theme-toggle{
+    font-family:var(--font-body);
+    font-weight:600;
+    font-size:12px;
+    background:var(--surface);
+    border:1px solid var(--surface-border);
+    color:var(--ink);
+    padding:8px 16px;
+    border-radius:100px;
+    cursor:pointer;
+    backdrop-filter:blur(10px);
+    transition:transform .15s ease, background .15s ease;
+  }
+  .theme-toggle:hover{transform:translateY(-1px);background:rgba(120,120,160,.12);}
+  .cover h1{
+    margin:0;
+    font-family:var(--font-display);
+    font-size:42px;
+    font-weight:700;
+    letter-spacing:-.01em;
+    background:linear-gradient(135deg, var(--ink) 30%, var(--gold) 100%);
+    -webkit-background-clip:text;
+    background-clip:text;
+    color:transparent;
+  }
+  .cover p{
+    margin:14px 0 0;
+    color:var(--ink-soft);
+    font-size:15px;
+    max-width:680px;
+    line-height:1.6;
+  }
+  .wrap{max-width:1100px;margin:0 auto;padding:0 40px;}
+
+  .dropzone{
+    border:1.5px dashed var(--surface-border);
+    background:var(--surface);
+    backdrop-filter:blur(14px);
+    border-radius:20px;
+    padding:34px 26px;
+    text-align:center;
+    cursor:pointer;
+    box-shadow:0 24px 48px -30px rgba(0,0,0,.4);
+    transition:border-color .2s ease, transform .2s ease, box-shadow .2s ease;
+  }
+  .dropzone:hover{transform:translateY(-2px);box-shadow:0 30px 60px -28px rgba(0,0,0,.45);}
+  .dropzone.drag{border-color:var(--gold);background:rgba(232,181,99,.08);}
+  .dropzone .upload-icon{font-size:26px;margin-bottom:10px;display:block;filter:drop-shadow(0 6px 14px rgba(0,0,0,.25));}
+  .dropzone strong{display:block;font-family:var(--font-display);font-size:16.5px;font-weight:600;margin-bottom:5px;}
+  .dropzone span{font-size:12.5px;color:var(--ink-soft);font-family:var(--mono);}
+  input[type=file]{display:none;}
+
+  .files{margin-top:16px;display:flex;flex-wrap:wrap;gap:10px;}
+  .chip{
+    font-family:var(--font-body);font-size:12.5px;font-weight:500;
+    background:var(--surface);backdrop-filter:blur(10px);
+    border:1px solid var(--surface-border);padding:7px 14px;border-radius:100px;
+    display:flex;align-items:center;gap:10px;
+  }
+  .chip button{border:none;background:none;color:var(--stamp-red);cursor:pointer;font-weight:bold;font-size:13px;}
+  .badge-warn{color:var(--gold);cursor:help;font-weight:700;margin-left:2px;}
+
+  .processing-status{font-family:var(--mono);font-size:12px;color:var(--ink-soft);margin-top:10px;display:none;}
+  .warnings-panel{display:none;margin-top:14px;padding:14px 18px;border-radius:12px;background:rgba(232,181,99,.08);border:1px solid rgba(232,181,99,.35);font-size:12.5px;}
+  .warnings-panel strong{color:var(--ink);}
+  .warnings-panel ul{margin:8px 0 0;padding-left:18px;}
+  .warnings-panel li{margin-top:4px;color:var(--ink-soft);}
+
+  .stamps{margin-top:38px;display:grid;grid-template-columns:repeat(3,1fr);gap:22px;}
+  @media (max-width:720px){.stamps{grid-template-columns:1fr;} .insight-grid{grid-template-columns:1fr !important;}}
+  .stamp{
+    position:relative;overflow:hidden;border-radius:20px;padding:26px 24px 22px;min-height:150px;
+    display:flex;flex-direction:column;justify-content:space-between;
+    background:linear-gradient(155deg, rgba(255,255,255,.09), rgba(255,255,255,.015) 55%), var(--card);
+    border:1px solid var(--surface-border);
+    box-shadow:0 22px 44px -26px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.05);
+    transition:transform .25s ease, box-shadow .25s ease;
+  }
+  .stamp:hover{transform:translateY(-5px);box-shadow:0 30px 54px -22px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.07);}
+  .stamp::after{
+    content:'';position:absolute;top:0;left:14%;right:14%;height:26px;
+    background:linear-gradient(120deg, rgba(255,255,255,.22), transparent 70%);
+    filter:blur(6px);pointer-events:none;
+  }
+  .stamp .topbar{position:absolute;top:0;left:0;right:0;height:3px;}
+  .stamp.credit .topbar{background:linear-gradient(90deg,#34D399,#17C9A8);}
+  .stamp.debit .topbar{background:linear-gradient(90deg,#FB7185,#F59E0B);}
+  .stamp.net .topbar{background:linear-gradient(90deg,#E8B563,#6C5CE7);}
+  .stamp .chip-icon{
+    position:absolute;top:22px;right:22px;width:32px;height:23px;border-radius:5px;
+    background:linear-gradient(135deg, rgba(255,255,255,.4), rgba(255,255,255,.08));
+    border:1px solid rgba(255,255,255,.3);
+  }
+  .stamp .label{font-family:var(--font-body);font-weight:600;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-soft);}
+  .stamp .value{font-family:var(--mono);font-size:27px;font-weight:600;letter-spacing:.01em;margin-top:14px;}
+  .stamp .sub{font-family:var(--font-body);font-size:12px;color:var(--ink-soft);margin-top:8px;}
+  .stamp.credit .value{color:var(--stamp-green);}
+  .stamp.debit .value{color:var(--stamp-red);}
+  .stamp.net .value{color:var(--gold);}
+
+  h2.section{
+    font-size:13px;font-family:var(--font-body);font-weight:600;text-transform:uppercase;letter-spacing:.14em;
+    color:var(--ink-soft);margin:48px 0 16px;display:flex;align-items:center;gap:12px;
+  }
+  h2.section::after{content:'';flex:1;height:1px;background:var(--surface-border);}
+
+  .banner{padding:14px 18px;border-radius:12px;font-size:13px;margin-bottom:10px;border:1px solid var(--surface-border);background:var(--surface);backdrop-filter:blur(10px);line-height:1.6;}
+  .banner.warn{border-color:rgba(232,181,99,.4);background:rgba(232,181,99,.08);}
+  .banner.bad{border-color:rgba(220,38,38,.35);background:rgba(220,38,38,.08);color:var(--stamp-red);}
+  .banner.good{border-color:rgba(5,150,105,.3);background:rgba(5,150,105,.08);color:var(--stamp-green);}
+  .dup-toggle{margin-left:14px;font-weight:600;cursor:pointer;font-size:12.5px;color:var(--ink);white-space:nowrap;}
+  .dup-toggle input{margin-right:6px;}
+
+  .insight-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-top:6px;}
+  .icard{background:var(--card);border:1px solid var(--surface-border);border-radius:16px;padding:18px 18px 16px;box-shadow:0 18px 36px -26px rgba(0,0,0,.5);}
+  .icard-label{font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-soft);}
+  .icard-value{font-family:var(--mono);font-size:19px;font-weight:600;margin-top:8px;}
+  .icard-sub{font-size:12px;color:var(--ink-soft);margin-top:6px;line-height:1.5;}
+  .icard-list{margin:10px 0 0;padding-left:16px;font-size:12px;color:var(--ink-soft);}
+  .icard-list li{margin-top:4px;}
+  .icard-good .icard-value{color:var(--stamp-green);}
+  .icard-warn .icard-value{color:var(--gold);}
+  .icard-bad .icard-value{color:var(--stamp-red);}
+  .icard-muted .icard-value{color:var(--ink-soft);}
+
+  .charts-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:18px;margin-top:20px;}
+  .chart-card{background:var(--surface);border:1px solid var(--surface-border);border-radius:16px;padding:18px;backdrop-filter:blur(14px);box-shadow:0 22px 40px -28px rgba(0,0,0,.45);}
+  .chart-title{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-soft);margin-bottom:10px;}
+  .chart-card canvas{max-width:100%;}
+
+  .table-card{
+    background:var(--surface);backdrop-filter:blur(14px);border:1px solid var(--surface-border);
+    border-radius:16px;overflow:hidden;box-shadow:0 24px 44px -30px rgba(0,0,0,.45);
+  }
+  table{width:100%;border-collapse:collapse;}
+  th,td{text-align:left;padding:12px 16px;font-size:13px;border-bottom:1px solid var(--surface-border);}
+  th{
+    font-family:var(--font-body);text-transform:uppercase;font-size:10.5px;font-weight:600;letter-spacing:.08em;color:var(--ink-soft);
+    background:rgba(120,120,160,.05);
+  }
+  tbody tr:last-child td{border-bottom:none;}
+  td.num, th.num{text-align:right;font-family:var(--mono);}
+  tr:hover td{background:var(--row-hover);}
+  tr.row-duplicate td{opacity:.5;}
+  .bar-row{display:flex;align-items:center;gap:8px;}
+  .bar-track{flex:1;height:7px;background:var(--surface-border);border-radius:100px;overflow:hidden;}
+  .bar-fill{height:100%;background:linear-gradient(90deg,#34D399,#17C9A8);}
+  .bar-fill.debit{background:linear-gradient(90deg,#FB7185,#F59E0B);}
+
+  .editable-cell{cursor:text;}
+  .editable-cell:hover{background:var(--row-hover);}
+  .cell-input{width:100%;font:inherit;color:inherit;background:var(--card);border:1px solid var(--gold);border-radius:6px;padding:4px 6px;}
+  .cell-select{font:inherit;color:inherit;background:var(--card);border:1px solid var(--surface-border);border-radius:6px;padding:4px 6px;max-width:170px;}
+  .badge-uncertain{color:var(--gold);font-weight:700;cursor:help;}
+  .badge-dup{background:rgba(220,38,38,.14);color:var(--stamp-red);font-size:9.5px;font-weight:700;padding:2px 6px;border-radius:100px;margin-left:6px;}
+  .badge-edited{background:rgba(108,92,231,.16);color:#8C7BF0;font-size:9.5px;font-weight:700;padding:2px 6px;border-radius:100px;margin-left:6px;}
+
+  .controls{display:flex;gap:10px;margin:16px 0;flex-wrap:wrap;align-items:center;}
+  .controls input, .controls select{
+    font-family:var(--font-body);font-size:13px;padding:9px 13px;border:1px solid var(--surface-border);
+    background:var(--surface);color:var(--ink);border-radius:10px;backdrop-filter:blur(10px);
+  }
+  .btn{
+    font-family:var(--font-body);font-size:13px;font-weight:600;letter-spacing:.01em;
+    background:linear-gradient(135deg, var(--gold), #C9944A);
+    color:#1B1206;border:none;padding:10px 20px;border-radius:10px;cursor:pointer;
+    box-shadow:0 12px 26px -10px rgba(184,134,46,.5);
+    transition:transform .15s ease, box-shadow .15s ease;
+  }
+  .btn:hover{transform:translateY(-2px);box-shadow:0 16px 32px -8px rgba(184,134,46,.55);}
+  .btn.secondary{background:var(--surface);color:var(--ink);border:1px solid var(--surface-border);box-shadow:none;}
+  .btn.secondary:hover{background:rgba(120,120,160,.1);transform:translateY(-1px);}
+
+  .empty{
+    text-align:center;padding:60px 20px;color:var(--ink-soft);font-family:var(--font-body);font-size:14px;
+    background:var(--surface);border:1px solid var(--surface-border);border-radius:16px;margin-top:20px;
+  }
+
+  details.rules{
+    margin-top:48px;background:var(--surface);backdrop-filter:blur(14px);
+    border:1px solid var(--surface-border);padding:20px 22px;border-radius:16px;
+    box-shadow:0 24px 44px -30px rgba(0,0,0,.45);
+  }
+  details.rules summary{cursor:pointer;font-family:var(--font-body);font-weight:600;font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-soft);}
+  .rule-row{display:grid;grid-template-columns:150px 1fr 54px 28px;gap:8px;margin-top:12px;align-items:center;}
+  .rule-row input{font-family:var(--font-body);font-size:12.5px;padding:7px 10px;border:1px solid var(--surface-border);border-radius:8px;background:var(--card);color:var(--ink);}
+  .rule-row .arrows{display:flex;gap:4px;}
+  .rule-row .arrows button{border:1px solid var(--surface-border);background:var(--card);color:var(--ink-soft);cursor:pointer;font-size:11px;padding:5px 7px;border-radius:6px;line-height:1;}
+  .rule-row .arrows button:disabled{opacity:.3;cursor:default;}
+  .rule-row .del-btn{border:none;background:none;color:var(--stamp-red);cursor:pointer;font-weight:bold;}
+
+  footer{margin-top:56px;font-family:var(--mono);font-size:10.5px;color:var(--ink-soft);text-align:center;position:relative;z-index:1;}
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <div class="wrap" style="padding:0;">
+    <div class="eyebrow">
+      <span class="eyebrow-pill">Ledger Intelligence &middot; Offline Tool</span>
+      <button class="theme-toggle" id="themeToggle">&#9790; Dark mode</button>
+    </div>
+    <h1>Statement Ledger</h1>
+    <p>Drop in any Indian bank statement &mdash; CSV/Excel export, PDF, or even a photo of a printed statement. It reads Credit/Debit, tags UPI, Salary, EMI, ATM and more automatically, and runs the same underwriting-style checks (average balance, recurring obligations, bounce flags, cash-flow trend) a lender would run by hand &mdash; entirely in this browser tab.</p>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <div class="dropzone" id="dropzone">
+    <span class="upload-icon">&#128228;</span>
+    <strong>Drop statement files here, or click to choose</strong>
+    <span>.CSV (comma or pipe) &middot; .XLS &middot; .XLSX &middot; .XLSB &middot; .PDF &middot; .JPG/.PNG/.WEBP photos &mdash; add more than one at a time</span>
+    <input type="file" id="fileInput" multiple accept=".csv,.xls,.xlsx,.xlsb,.pdf,.jpg,.jpeg,.png,.webp">
+  </div>
+  <div class="files" id="fileList"></div>
+  <p id="parseNote" style="display:none;font-family:var(--mono);font-size:11px;color:var(--stamp-red);margin-top:8px;">
+    PDF rows are reconstructed from text position, and photo/scan rows come from on-device OCR &mdash; neither is a real table. Spot-check the Debit/Credit split and every amount, especially on messy statements or angled/low-light photos. Click any cell in the Transactions table below to correct it.
+  </p>
+  <div class="processing-status" id="processingStatus"></div>
+  <div class="warnings-panel" id="warningsPanel"></div>
+
+  <div id="emptyState" class="empty">No statement loaded yet. Once you add a file, the ledger fills in below.</div>
+
+  <div id="results" style="display:none;">
+
+    <div class="stamps">
+      <div class="stamp credit">
+        <div class="topbar"></div>
+        <div class="chip-icon"></div>
+        <div class="label">Total Credit</div>
+        <div class="value" id="totalCredit">&#8377;0</div>
+        <div class="sub" id="creditCount">0 entries</div>
+      </div>
+      <div class="stamp debit">
+        <div class="topbar"></div>
+        <div class="chip-icon"></div>
+        <div class="label">Total Debit</div>
+        <div class="value" id="totalDebit">&#8377;0</div>
+        <div class="sub" id="debitCount">0 entries</div>
+      </div>
+      <div class="stamp net">
+        <div class="topbar"></div>
+        <div class="chip-icon"></div>
+        <div class="label">Net</div>
+        <div class="value" id="netTotal">&#8377;0</div>
+        <div class="sub" id="txnCount">0 total entries</div>
+      </div>
+    </div>
+
+    <h2 class="section">Underwriting Insights</h2>
+    <div id="dupBanner"></div>
+    <div id="continuityBanner"></div>
+    <div class="insight-grid" id="insightGrid"></div>
+
+    <div class="charts-grid">
+      <div class="chart-card"><div class="chart-title">Monthly Cash Flow</div><canvas id="cashflowChart" height="220"></canvas></div>
+      <div class="chart-card"><div class="chart-title">Debit by Category</div><canvas id="categoryDonut" height="220"></canvas></div>
+      <div class="chart-card" id="balanceChartCard" style="display:none;"><div class="chart-title">Balance Trend</div><canvas id="balanceChart" height="220"></canvas></div>
+    </div>
+
+    <h2 class="section">Category Breakdown</h2>
+    <div class="table-card">
+    <table id="categoryTable">
+      <thead><tr>
+        <th>Category</th><th class="num">Credit</th><th class="num">Debit</th><th class="num">Count</th><th style="width:160px;">Share of debit</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+    </div>
+
+    <h2 class="section">Transactions</h2>
+    <div class="controls">
+      <input type="text" id="searchBox" placeholder="Search description...">
+      <select id="categoryFilter"><option value="">All categories</option></select>
+      <select id="typeFilter">
+        <option value="">Credit &amp; Debit</option>
+        <option value="credit">Credit only</option>
+        <option value="debit">Debit only</option>
+      </select>
+      <select id="fileFilter"><option value="">All files</option></select>
+      <button class="btn" id="exportBtn">Export CSV</button>
+      <button class="btn secondary" id="resetBtn">Reset</button>
+    </div>
+    <p style="font-family:var(--mono);font-size:11px;color:var(--ink-soft);margin:-6px 0 4px;">Click any Date, Description, Debit, Credit or Category cell to correct it &mdash; totals and charts update immediately.</p>
+    <div class="table-card">
+    <table id="txnTable">
+      <thead><tr>
+        <th>Date</th><th>Description</th><th>Source file</th><th class="num">Debit</th><th class="num">Credit</th><th>Category</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+    </div>
+  </div>
+
+  <details class="rules">
+    <summary>Manage categorisation rules</summary>
+    <div id="ruleRows"></div>
+    <button class="btn secondary" id="addRuleBtn" style="margin-top:12px;">+ Add category</button>
+    <p style="font-family:var(--mono);font-size:11px;color:var(--ink-soft);margin-top:12px;">
+      Keywords are comma-separated and matched against the transaction description (case-insensitive). The <strong>first matching rule wins</strong> &mdash; if two rules could both match a description, whichever is higher in this list is used. Use the &#9650;&#9660; arrows to reorder. Your changes are saved automatically for next time.
+    </p>
+  </details>
+
+  <footer>Runs entirely in this browser tab &mdash; parsing, OCR and analysis all happen on your device; no data leaves this page.</footer>
+</div>
+
+<script>
+const DEFAULT_RULES = [
+  {category:'Salary', keywords:'SALARY, SAL CREDIT, PAYROLL'},
+  {category:'Bounce / Penalty', keywords:'RETURN CHRG, RETURN CHARGE, CHQ RETURN, CHEQUE RETURN, ECS RET, ECS REJECT, ACH RET, INSUFFICIENT FUND, PENAL, BOUNCE'},
+  {category:'UPI', keywords:'UPI'},
+  {category:'EMI / Loan', keywords:'EMI, LOAN, INSTALLMENT, INSTALMENT'},
+  {category:'AMC / Card Fees', keywords:'AMC, ANNUAL MAINTENANCE, ANNUAL FEE, JOINING FEE'},
+  {category:'ATM / Cash', keywords:'ATM, CASH WDL, CSH WDL, CASH WITHDRAWAL'},
+  {category:'Bank Transfer', keywords:'NEFT, RTGS, IMPS'},
+  {category:'Card / POS', keywords:'POS, CARD, SWIPE'},
+  {category:'Interest', keywords:'INT.CR, INTEREST, INT PAID'},
+  {category:'Bank Charges', keywords:'CHG, CHARGE, GST, AMB, SMS CHG'},
+  {category:'Cheque', keywords:'CHQ, CHEQUE'},
+  {category:'Rent', keywords:'RENT'},
+];
+
+if(window.pdfjsLib){
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+}
+
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// ---- Theme ----
+function applyTheme(theme){
+  document.documentElement.setAttribute('data-theme', theme);
+  const btn = document.getElementById('themeToggle');
+  if(btn) btn.innerHTML = theme === 'dark' ? '&#9728; Light mode' : '&#9790; Dark mode';
+  try{ localStorage.setItem('ledger-theme', theme); }catch(e){}
+}
+(function initTheme(){
+  let saved = 'dark';
+  try{ saved = localStorage.getItem('ledger-theme') || 'dark'; }catch(e){}
+  applyTheme(saved);
+})();
+document.getElementById('themeToggle').addEventListener('click', () => {
+  const current = document.documentElement.getAttribute('data-theme');
+  applyTheme(current === 'dark' ? 'light' : 'dark');
+  if(allTxns.length) renderAll();
+});
+
+let rules = [];
+let files = []; // {id, name, label, count, warnings:[]}
+let allTxns = [];
+let fileSeq = 0;
+let charts = {cashflow:null, category:null, balance:null};
+
+function num(v){
+  if(v===undefined||v===null) return 0;
+  const s = String(v).replace(/[^0-9.\-]/g,'');
+  const f = parseFloat(s);
+  return isNaN(f) ? 0 : f;
+}
+function fmtMoney(v){
+  return '₹' + (v||0).toLocaleString('en-IN', {maximumFractionDigits:2});
+}
+function categorize(desc){
+  const d = (desc||'').toUpperCase();
+  for(const r of rules){
+    const kws = r.keywords.split(',').map(k=>k.trim().toUpperCase()).filter(Boolean);
+    if(kws.some(k => k && d.includes(k))) return r.category;
+  }
+  return 'Other';
+}
+
+const MONTH_MAP = {JAN:0,FEB:1,MAR:2,APR:3,MAY:4,JUN:5,JUL:6,AUG:7,SEP:8,OCT:9,NOV:10,DEC:11};
+function parseDate(str){
+  if(!str) return null;
+  const s = String(str).trim();
+  let m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);
+  if(m){
+    let d=+m[1], mo=+m[2], y=+m[3];
+    if(y<100) y += (y<70?2000:1900);
+    if(mo>12 && d<=12){ const t=d; d=mo; mo=t; }
+    const dt = new Date(y, mo-1, d);
+    return isNaN(dt.getTime()) ? null : dt;
+  }
+  m = s.match(/^(\d{1,2})[\-\/\s]([A-Za-z]{3,9})[\-\/\s](\d{2,4})$/);
+  if(m){
+    let d=+m[1], y=+m[3];
+    if(y<100) y += (y<70?2000:1900);
+    const mi = MONTH_MAP[m[2].slice(0,3).toUpperCase()];
+    if(mi===undefined) return null;
+    const dt = new Date(y, mi, d);
+    return isNaN(dt.getTime()) ? null : dt;
+  }
+  m = s.match(/^(\d{4})[\-\/](\d{1,2})[\-\/](\d{1,2})$/);
+  if(m){
+    const dt = new Date(+m[1], +m[2]-1, +m[3]);
+    return isNaN(dt.getTime()) ? null : dt;
+  }
+  const generic = new Date(s);
+  return isNaN(generic.getTime()) ? null : generic;
+}
+function monthKey(dt){ return dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0'); }
+function monthLabel(key){
+  const parts = key.split('-').map(Number);
+  return new Date(parts[0], parts[1]-1, 1).toLocaleDateString('en-IN',{month:'short', year:'numeric'});
+}
+function normalizeDesc(desc){
+  return (desc||'').toUpperCase().replace(/[0-9]/g,'').replace(/[^A-Z\s]/g,' ').replace(/\s+/g,' ').trim();
+}
+
+async function loadRules(){
+  try{
+    const raw = localStorage.getItem('ledger-category-rules');
+    rules = raw ? JSON.parse(raw) : DEFAULT_RULES.slice();
+  }catch(e){
+    rules = DEFAULT_RULES.slice();
+  }
+  renderRuleRows();
+}
+async function saveRules(){
+  try{ localStorage.setItem('ledger-category-rules', JSON.stringify(rules)); }catch(e){}
+}
+
+function renderRuleRows(){
+  const container = document.getElementById('ruleRows');
+  container.innerHTML = '';
+  rules.forEach((r, i) => {
+    const row = document.createElement('div');
+    row.className = 'rule-row';
+    row.innerHTML = `
+      <input type="text" value="${escapeHtml(r.category)}" data-idx="${i}" data-field="category">
+      <input type="text" value="${escapeHtml(r.keywords)}" data-idx="${i}" data-field="keywords">
+      <div class="arrows">
+        <button data-idx="${i}" data-dir="-1" ${i===0?'disabled':''} title="Move up">&#9650;</button>
+        <button data-idx="${i}" data-dir="1" ${i===rules.length-1?'disabled':''} title="Move down">&#9660;</button>
+      </div>
+      <button class="del-btn" data-idx="${i}" title="Delete">&times;</button>
+    `;
+    container.appendChild(row);
+  });
+  container.querySelectorAll('input').forEach(inp => {
+    inp.addEventListener('change', e => {
+      const idx = +e.target.dataset.idx, field = e.target.dataset.field;
+      rules[idx][field] = e.target.value;
+      saveRules();
+      if(allTxns.length) recompute();
+    });
+  });
+  container.querySelectorAll('.arrows button').forEach(btn => {
+    btn.addEventListener('click', e => {
+      const idx = +e.target.dataset.idx, dir = +e.target.dataset.dir;
+      const swapIdx = idx + dir;
+      if(swapIdx < 0 || swapIdx >= rules.length) return;
+      const tmp = rules[idx]; rules[idx] = rules[swapIdx]; rules[swapIdx] = tmp;
+      renderRuleRows();
+      saveRules();
+      if(allTxns.length) recompute();
+    });
+  });
+  container.querySelectorAll('.del-btn').forEach(btn => {
+    btn.addEventListener('click', e => {
+      rules.splice(+e.target.dataset.idx, 1);
+      renderRuleRows();
+      saveRules();
+      if(allTxns.length) recompute();
+    });
+  });
+}
+document.getElementById('addRuleBtn').addEventListener('click', () => {
+  rules.unshift({category:'New category', keywords:''});
+  renderRuleRows();
+  saveRules();
+});
+
+function recompute(){
+  allTxns.forEach(t => { if(!t.manualCategory) t.category = categorize(t.description); });
+  renderAll();
+}
+
+// ---- Spreadsheet parsing ----
+function findHeaderRow(rows){
+  const maxScan = Math.min(rows.length, 30);
+  for(let i=0;i<maxScan;i++){
+    const joined = rows[i].map(c => String(c||'').toUpperCase()).join('|');
+    if(joined.includes('DATE') && (joined.includes('DEBIT') || joined.includes('WITHDRAW') || joined.includes('CREDIT') || joined.includes('DEPOSIT') || joined.includes('AMOUNT'))){
+      return i;
+    }
+  }
+  return -1;
+}
+function colIndex(headerRow, keywords){
+  for(let i=0;i<headerRow.length;i++){
+    const c = String(headerRow[i]||'').toUpperCase();
+    if(keywords.some(k => c.includes(k))) return i;
+  }
+  return -1;
+}
+
+// Shared by spreadsheet sheets and raw CSV/delimited text: given a grid of
+// cells (header:1 style rows-of-arrays), find the header row, map its
+// columns, and extract transactions.
+function processGridRows(rows, label, filename){
+  const txns = [];
+  const warnings = [];
+  if(!rows.length) return {txns, warnings};
+  const headerIdx = findHeaderRow(rows);
+  if(headerIdx === -1){
+    warnings.push(`${label}: couldn't find a header row with Date/Debit/Credit/Amount columns.`);
+    return {txns, warnings};
+  }
+  const header = rows[headerIdx];
+  const dateCol = colIndex(header, ['DATE']);
+  const descCol = colIndex(header, ['NARRATION','DESCRIPTION','PARTICULAR','REMARK','TRANSACTION DETAIL']);
+  const debitCol = colIndex(header, ['DEBIT','WITHDRAWAL']);
+  const creditCol = colIndex(header, ['CREDIT','DEPOSIT']);
+  const amountCol = colIndex(header, ['AMOUNT']);
+  const drcrCol = colIndex(header, ['DR/CR','CR/DR','TYPE']);
+  const balCol = colIndex(header, ['BALANCE']);
+
+  let count = 0;
+  for(let i=headerIdx+1;i<rows.length;i++){
+    const row = rows[i];
+    if(!row || row.every(c => String(c).trim()==='')) continue;
+    const dateVal = dateCol!==-1 ? row[dateCol] : '';
+    if(dateCol!==-1 && !String(dateVal).trim()) continue;
+    const desc = descCol!==-1 ? row[descCol] : row.join(' ');
+    let debit = 0, credit = 0;
+
+    if(debitCol!==-1 || creditCol!==-1){
+      debit = debitCol!==-1 ? num(row[debitCol]) : 0;
+      credit = creditCol!==-1 ? num(row[creditCol]) : 0;
+    } else if(amountCol!==-1){
+      const amt = num(row[amountCol]);
+      const drcr = drcrCol!==-1 ? String(row[drcrCol]||'').toUpperCase() : '';
+      if(drcr.includes('CR')) credit = Math.abs(amt);
+      else if(drcr.includes('DR')) debit = Math.abs(amt);
+      else if(amt < 0) debit = Math.abs(amt);
+      else credit = amt;
+    } else {
+      continue;
+    }
+    if(debit===0 && credit===0) continue;
+
+    const dateStr = String(dateVal||'').trim();
+    txns.push({
+      date: dateStr,
+      dateObj: parseDate(dateStr),
+      description: String(desc||'').trim(),
+      file: filename,
+      debit, credit,
+      balance: balCol!==-1 ? num(row[balCol]) : null,
+      category: categorize(desc),
+      source:'spreadsheet'
+    });
+    count++;
+  }
+  if(count===0 && rows.length>headerIdx+1){
+    warnings.push(`${label}: header row found but no valid transaction rows extracted — check the Debit/Credit/Amount values.`);
+  }
+  return {txns, warnings};
+}
+
+function parseWorkbook(wb, filename){
+  let txns = [];
+  let warnings = [];
+  wb.SheetNames.forEach(sheetName => {
+    const ws = wb.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json(ws, {header:1, raw:false, defval:''});
+    const result = processGridRows(rows, `Sheet "${sheetName}"`, filename);
+    txns = txns.concat(result.txns);
+    warnings = warnings.concat(result.warnings);
+  });
+  if(txns.length===0 && warnings.length===0){
+    warnings.push('No rows detected. Make sure the file has a header row containing Date and Debit/Credit (or Amount) columns.');
+  }
+  return {txns, warnings};
+}
+
+// Plain CSV/delimited text, parsed by hand so we aren't limited to
+// comma-only files — auto-detects comma, pipe, semicolon or tab, and
+// handles quoted fields (with "" as an escaped quote) either way.
+function detectDelimiter(text){
+  const firstLine = (text.split(/\r?\n/).find(l => l.trim() !== '')) || '';
+  const candidates = [',', '|', ';', '\t'];
+  let best = ',', bestCount = -1;
+  candidates.forEach(d => {
+    const count = firstLine.split(d).length - 1;
+    if(count > bestCount){ bestCount = count; best = d; }
+  });
+  return best;
+}
+function parseDelimitedText(text, delimiter){
+  const rows = [];
+  let row = [], field = '', inQuotes = false;
+  for(let i=0;i<text.length;i++){
+    const c = text[i];
+    if(inQuotes){
+      if(c === '"'){
+        if(text[i+1] === '"'){ field += '"'; i++; }
+        else inQuotes = false;
+      } else field += c;
+    } else if(c === '"'){
+      inQuotes = true;
+    } else if(c === delimiter){
+      row.push(field); field = '';
+    } else if(c === '\n'){
+      row.push(field); rows.push(row); row = []; field = '';
+    } else if(c === '\r'){
+      // skip, paired \n (if any) handles the row break
+    } else {
+      field += c;
+    }
+  }
+  if(field.length || row.length){ row.push(field); rows.push(row); }
+  return rows;
+}
+function parseCsvText(text, filename){
+  const delimiter = detectDelimiter(text);
+  const rows = parseDelimitedText(text, delimiter);
+  return processGridRows(rows, 'CSV', filename);
+}
+
+// ---- PDF parsing (best-effort, text-position based) ----
+function parseStatementLine(line, lastBalance){
+  const dateMatch = line.match(/^\s*(\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4})/);
+  if(!dateMatch) return null;
+  const date = dateMatch[1];
+  const rest = line.slice(dateMatch[0].length).trim();
+  const numRe = /[\d,]+\.\d{1,2}/g;
+  const nums = rest.match(numRe);
+  if(!nums || nums.length===0) return null;
+
+  const firstNumIdx = rest.search(numRe);
+  const description = rest.slice(0, firstNumIdx).trim().replace(/\s{2,}/g,' ');
+  const values = nums.map(n => parseFloat(n.replace(/,/g,'')));
+
+  let amount, balance = null;
+  if(values.length >= 2){
+    balance = values[values.length-1];
+    amount = values[values.length-2];
+  } else {
+    amount = values[0];
+  }
+
+  const upper = rest.toUpperCase();
+  let type = null;
+  if(/\bCR\b|\bCREDIT\b/.test(upper)) type = 'credit';
+  else if(/\bDR\b|\bDEBIT\b/.test(upper)) type = 'debit';
+  else if(balance !== null && lastBalance !== null) type = balance >= lastBalance ? 'credit' : 'debit';
+
+  let debit = 0, credit = 0, uncertain = false;
+  if(type === 'credit') credit = amount;
+  else if(type === 'debit') debit = amount;
+  else { debit = amount; uncertain = true; }
+
+  return {date, description: description || '(no description found)', debit, credit, balance, uncertain};
+}
+
+// A transaction's narration routinely wraps across several physical lines, and the
+// amount/balance columns can land a line above or below that wrapped text depending
+// on how the PDF (or OCR) laid out the row. Rather than requiring the date and the
+// amounts to share one exact line, group lines into "blocks" starting at each line
+// that looks like a real transaction start (a leading date followed by letters, not
+// just more numbers), and parse the whole block's text as one transaction.
+function looksLikeBlockStart(line){
+  const m = line.match(/^\s*\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4}\s*(.*)$/);
+  return !!(m && /[A-Za-z]/.test(m[1]));
+}
+const PDF_NOISE_RE = /^\s*(page\s*no|statement of account|hdfc bank|closing balance includes|contents of this statement|nomination|state account branch|registered office|account branch|account no|account status|rtgs\/neft|branch code|account type|joint holders)/i;
+function groupLinesIntoBlocks(lines){
+  const blocks = [];
+  let current = null;
+  lines.forEach(line => {
+    if(!line || PDF_NOISE_RE.test(line)) return;
+    if(looksLikeBlockStart(line)){
+      current = [line];
+      blocks.push(current);
+    } else if(current){
+      current.push(line);
+    }
+  });
+  return blocks.map(ls => ls.join(' ').replace(/\s+/g,' ').trim());
+}
+
+// pdf.js needs a worker script; when the page is opened via file:// some browsers
+// block loading it from a remote CDN origin, which silently makes every PDF page
+// look empty. Detect that once so we can tell the user plainly instead of just
+// showing "no rows found" as if the statement itself were the problem.
+let pdfWorkerBlocked = false;
+
+function textItemsFromContent(content){
+  return content.items
+    .map(it => ({str: it.str, x: it.transform[4], y: Math.round(it.transform[5])}))
+    .filter(it => it.str.trim() !== '');
+}
+function linesFromItems(items){
+  const rowsMap = [];
+  items.forEach(it => {
+    let bucket = rowsMap.find(b => Math.abs(b.y - it.y) <= 3);
+    if(!bucket){ bucket = {y: it.y, items: []}; rowsMap.push(bucket); }
+    bucket.items.push(it);
+  });
+  rowsMap.sort((a,b) => b.y - a.y);
+  return rowsMap.map(bucket => {
+    bucket.items.sort((a,b) => a.x - b.x);
+    return bucket.items.map(it => it.str).join(' ').replace(/\s+/g,' ').trim();
+  });
+}
+function blocksToTxns(lines, filename, lastBalanceStart, source, uncertainReason){
+  const txns = [];
+  let lastBalance = lastBalanceStart;
+  groupLinesIntoBlocks(lines).forEach(blockText => {
+    const parsed = parseStatementLine(blockText, lastBalance);
+    if(parsed){
+      txns.push({
+        date: parsed.date,
+        dateObj: parseDate(parsed.date),
+        description: parsed.description,
+        file: filename,
+        debit: parsed.debit,
+        credit: parsed.credit,
+        balance: parsed.balance,
+        category: categorize(parsed.description),
+        uncertain: source==='pdf' ? parsed.uncertain : true,
+        uncertainReason: source==='pdf' ? (parsed.uncertain ? 'Could not confirm Debit vs Credit from the PDF text — verify manually' : null) : uncertainReason,
+        source
+      });
+      if(parsed.balance !== null) lastBalance = parsed.balance;
+    }
+  });
+  return {txns, lastBalance};
+}
+
+async function renderPdfPageToCanvas(pdfPage, scale){
+  const viewport = pdfPage.getViewport({scale});
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.ceil(viewport.width);
+  canvas.height = Math.ceil(viewport.height);
+  await pdfPage.render({canvasContext: canvas.getContext('2d'), viewport}).promise;
+  return canvas;
+}
+
+async function parsePdfFile(arrayBuffer, filename, onProgress){
+  let pdf;
+  try{
+    pdf = await pdfjsLib.getDocument({data: arrayBuffer}).promise;
+  }catch(e){
+    if(/worker/i.test(e.message||'')){
+      pdfWorkerBlocked = true;
+      return {txns:[], warnings:['Could not open this PDF: the PDF engine’s background worker failed to load. If you opened this page directly from a file (no internet, or a strict browser setting), try reloading with a working internet connection once, or host the page online.']};
+    }
+    return {txns:[], warnings:['Could not open this PDF ('+e.message+'). It may be corrupted, password-protected, or an unsupported PDF version.']};
+  }
+  let txns = [];
+  const warnings = [];
+  const debugLines = [];
+  let lastBalance = null;
+  let anyTextAtAll = false;
+  for(let p=1; p<=pdf.numPages; p++){
+    onProgress && onProgress({stage:'text', page:p, total:pdf.numPages});
+    const page = await pdf.getPage(p);
+    const content = await page.getTextContent();
+    const items = textItemsFromContent(content);
+    if(items.length===0) continue;
+    anyTextAtAll = true;
+    const lines = linesFromItems(items);
+    if(debugLines.length===0){
+      debugLines.push('--- Raw text extracted from PDF page '+p+' (what the parser sees, before any row grouping) ---');
+      lines.slice(0,50).forEach(l => debugLines.push(l));
+    }
+    const result = blocksToTxns(lines, filename, lastBalance, 'pdf', null);
+    txns = txns.concat(result.txns);
+    lastBalance = result.lastBalance;
+  }
+
+  if(txns.length===0){
+    if(!anyTextAtAll && typeof Tesseract !== 'undefined'){
+      // This PDF has no usable text layer at all — common with Indian bank
+      // statement generators that embed fonts with broken Unicode maps, so the
+      // page looks normal but pdf.js can't read a single character from it.
+      // Fall back to rasterizing each page and running the same OCR path used
+      // for photographed statements.
+      let ocrBalance = null;
+      let ocrErrorCount = 0;
+      let firstOcrError = null;
+      let pagesWithNoOcrText = 0;
+      for(let p=1; p<=pdf.numPages; p++){
+        onProgress && onProgress({stage:'ocr', page:p, total:pdf.numPages, progress:0});
+        try{
+          const pdfPage = await pdf.getPage(p);
+          const canvas = await renderPdfPageToCanvas(pdfPage, 2.8);
+          const worker = await getOcrWorker();
+          setOcrProgressHandler(m => onProgress && onProgress({stage:'ocr', page:p, total:pdf.numPages, progress:(m.status==='recognizing text'?m.progress:0)}));
+          const { data } = await worker.recognize(canvas);
+          const lines = (data.lines||[]).map(l=>l.text.replace(/\s+/g,' ').trim()).filter(Boolean);
+          if(lines.length===0) pagesWithNoOcrText++;
+          if(p===1){
+            debugLines.push('--- Raw OCR text from rasterized page 1 (text layer was empty), '+lines.length+' line(s) ---');
+            lines.slice(0,50).forEach(l => debugLines.push(l));
+          }
+          const result = blocksToTxns(lines, filename, ocrBalance, 'pdf-ocr', 'Recovered via OCR fallback (this PDF has no readable text layer) — verify every value manually');
+          txns = txns.concat(result.txns);
+          ocrBalance = result.lastBalance;
+        }catch(e){
+          ocrErrorCount++;
+          if(!firstOcrError) firstOcrError = (e && e.message) ? e.message : String(e);
+          if(p===1) debugLines.push('--- OCR threw an error on page 1: '+firstOcrError+' ---');
+        }
+      }
+      if(txns.length===0){
+        let detail = '';
+        if(firstOcrError) detail = ' (OCR error on '+ocrErrorCount+'/'+pdf.numPages+' page(s): "'+firstOcrError+'")';
+        else if(pagesWithNoOcrText === pdf.numPages) detail = ' (OCR ran without errors but read zero characters on every page — the rendered page may be blank, or the OCR engine/language data failed to load correctly)';
+        warnings.push('This PDF has no extractable text layer, and the OCR fallback (rasterizing each page) still found no date + amount rows.'+detail+' Try exporting a CSV/Excel copy from your bank instead, or check the raw text below.');
+      } else {
+        warnings.push('This PDF had no extractable text layer (a common issue with certain bank statement generators), so rows were recovered via on-device OCR instead — double-check every value, OCR is less reliable than a real text layer.');
+      }
+    } else if(!anyTextAtAll){
+      warnings.push('This PDF has no extractable text layer and the OCR engine failed to load (check your internet connection) to try a fallback.');
+    } else {
+      warnings.push('No parsable transaction rows found in this PDF’s text layer. It may use a layout this tool doesn’t recognize yet — try the image (OCR) upload instead, or export a CSV/Excel copy from your bank.');
+    }
+  }
+  return {txns, warnings, debugLines: txns.length===0 ? debugLines : undefined};
+}
+
+// ---- Shared on-device OCR worker (Tesseract.js) ----
+// PSM 6 ("assume a single uniform block of text") reads dense transaction
+// tables far more reliably than the default automatic page segmentation,
+// which tends to mis-order or drop columns on statement-style layouts.
+let ocrWorkerPromise = null;
+let ocrProgressHandler = null;
+function setOcrProgressHandler(fn){ ocrProgressHandler = fn; }
+async function getOcrWorker(){
+  if(!ocrWorkerPromise){
+    ocrWorkerPromise = (async () => {
+      const worker = await Tesseract.createWorker('eng', 1, {
+        logger: m => { if(ocrProgressHandler) ocrProgressHandler(m); }
+      });
+      // Best-effort page-segmentation tuning — some Tesseract.js builds throw
+      // here if called before the engine has fully settled, so never let this
+      // take the whole OCR pipeline down with it; just fall back to the
+      // engine's default segmentation if it fails.
+      try{
+        await worker.setParameters({ tessedit_pageseg_mode: '6' });
+      }catch(e){
+        console.warn('OCR page-segmentation tuning failed, continuing with default settings:', e);
+      }
+      return worker;
+    })();
+  }
+  return ocrWorkerPromise;
+}
+
+// ---- Image parsing via on-device OCR ----
+async function parseImageFile(file, filename, onProgress){
+  const txns = [];
+  const warnings = [];
+  if(typeof Tesseract === 'undefined'){
+    warnings.push('OCR engine failed to load (check your internet connection) — image could not be read.');
+    return {txns, warnings};
+  }
+  try{
+    const worker = await getOcrWorker();
+    setOcrProgressHandler(onProgress);
+    const { data } = await worker.recognize(file);
+    const lines = (data.lines||[]).map(l=>l.text.replace(/\s+/g,' ').trim()).filter(Boolean);
+    let lastBalance = null;
+    groupLinesIntoBlocks(lines).forEach(blockText => {
+      const parsed = parseStatementLine(blockText, lastBalance);
+      if(parsed){
+        txns.push({
+          date: parsed.date,
+          dateObj: parseDate(parsed.date),
+          description: parsed.description,
+          file: filename,
+          debit: parsed.debit,
+          credit: parsed.credit,
+          balance: parsed.balance,
+          category: categorize(parsed.description),
+          uncertain: true,
+          uncertainReason: 'OCR-read row — verify every value manually, digits are the most common OCR error',
+          source:'image'
+        });
+        if(parsed.balance !== null) lastBalance = parsed.balance;
+      }
+    });
+    if(txns.length===0){
+      warnings.push('OCR ran but no rows matched a date + amount pattern. The photo may be angled, blurry, or low-resolution — try a flatter, well-lit, higher-resolution shot, or use a PDF/CSV export instead.');
+    }
+  }catch(err){
+    warnings.push('OCR failed: '+err.message);
+  }
+  return {txns, warnings};
+}
+
+// ---- Underwriting-style analytics ----
+function computeDuplicates(){
+  const map = {};
+  allTxns.forEach(t=>{
+    const key = (t.dateObj?t.dateObj.toISOString().slice(0,10):t.date)+'|'+t.debit.toFixed(2)+'|'+t.credit.toFixed(2)+'|'+normalizeDesc(t.description);
+    (map[key]=map[key]||[]).push(t);
+  });
+  Object.values(map).forEach(group=>{
+    const distinctFiles = new Set(group.map(t=>t.fileId));
+    if(distinctFiles.size>1 && group.length>1){
+      group.forEach((t,i)=>{ t.duplicate = i>0; });
+    } else {
+      group.forEach(t=>t.duplicate=false);
+    }
+  });
+}
+
+function computeBalanceInsights(txns){
+  const withBal = txns.filter(t=>t.balance!==null && t.balance!==undefined && t.dateObj).sort((a,b)=>a.dateObj-b.dateObj);
+  if(withBal.length < 2) return null;
+  let weightedSum=0, totalDays=0;
+  for(let i=0;i<withBal.length;i++){
+    const cur = withBal[i];
+    const next = withBal[i+1];
+    const days = next ? Math.max(1, Math.round((next.dateObj-cur.dateObj)/86400000)) : 1;
+    weightedSum += cur.balance*days;
+    totalDays += days;
+  }
+  const amb = weightedSum/totalDays;
+  const minBal = Math.min(...withBal.map(t=>t.balance));
+  return {amb, minBal};
+}
+
+function computeSalaryInsight(txns){
+  const sal = txns.filter(t=>t.category==='Salary' && t.credit>0 && t.dateObj).sort((a,b)=>a.dateObj-b.dateObj);
+  if(sal.length===0) return null;
+  const amounts = sal.map(t=>t.credit);
+  const mean = amounts.reduce((a,b)=>a+b,0)/amounts.length;
+  const variance = amounts.reduce((s,a)=>s+(a-mean)*(a-mean),0)/amounts.length;
+  const cv = mean ? Math.sqrt(variance)/mean : 1;
+  let regularity = 'Not enough data';
+  if(sal.length>=2){
+    const gaps=[];
+    for(let i=1;i<sal.length;i++) gaps.push((sal[i].dateObj-sal[i-1].dateObj)/86400000);
+    const avgGap = gaps.reduce((a,b)=>a+b,0)/gaps.length;
+    regularity = (avgGap>=24 && avgGap<=37) ? 'Regular (monthly)' : 'Irregular';
+  }
+  return {count:sal.length, mean, cv, regularity};
+}
+
+function computeRecurring(txns){
+  const debits = txns.filter(t=>t.debit>0 && t.dateObj && t.category!=='Bounce / Penalty');
+  const groups = {};
+  debits.forEach(t=>{
+    const key = normalizeDesc(t.description).split(' ').slice(0,4).join(' ') || '(blank)';
+    (groups[key]=groups[key]||[]).push(t);
+  });
+  const recurring = [];
+  Object.values(groups).forEach(group=>{
+    if(group.length<3) return;
+    group.sort((a,b)=>a.dateObj-b.dateObj);
+    const amounts = group.map(t=>t.debit);
+    const mean = amounts.reduce((a,b)=>a+b,0)/amounts.length;
+    if(mean===0) return;
+    const maxDelta = Math.max(...amounts.map(a=>Math.abs(a-mean)));
+    if(maxDelta/mean > 0.08) return;
+    const gaps=[];
+    for(let i=1;i<group.length;i++) gaps.push((group[i].dateObj-group[i-1].dateObj)/86400000);
+    const avgGap = gaps.reduce((a,b)=>a+b,0)/gaps.length;
+    if(avgGap < 20 || avgGap > 40) return;
+    recurring.push({desc:group[group.length-1].description, count:group.length, avgAmount:mean, avgGapDays:Math.round(avgGap)});
+  });
+  return recurring.sort((a,b)=>b.avgAmount-a.avgAmount);
+}
+
+function computeBounceInsight(txns){
+  const bounced = txns.filter(t=>t.category==='Bounce / Penalty');
+  const total = bounced.reduce((s,t)=>s+t.debit+t.credit,0);
+  return {count:bounced.length, total};
+}
+
+function computeCashRatio(txns){
+  const totalDebit = txns.reduce((s,t)=>s+t.debit,0);
+  const cashDebit = txns.filter(t=>t.category==='ATM / Cash').reduce((s,t)=>s+t.debit,0);
+  return totalDebit ? (cashDebit/totalDebit*100) : 0;
+}
+
+function computeOutliers(txns){
+  const amounts = txns.map(t=>Math.max(t.debit,t.credit)).filter(a=>a>0).sort((a,b)=>a-b);
+  if(!amounts.length) return {threshold:0, items:[]};
+  const median = amounts[Math.floor(amounts.length/2)];
+  const threshold = Math.max(median*3, 25000);
+  const items = txns.filter(t=>Math.max(t.debit,t.credit) > threshold)
+    .sort((a,b)=>Math.max(b.debit,b.credit)-Math.max(a.debit,a.credit)).slice(0,20);
+  return {threshold, items};
+}
+
+function computeContinuity(txns){
+  const byFile = {};
+  txns.forEach(t=>{
+    if(t.balance==null || !t.dateObj) return;
+    (byFile[t.fileId]=byFile[t.fileId]||[]).push(t);
+  });
+  const fileStats = Object.values(byFile).map(ftxns=>{
+    ftxns.sort((a,b)=>a.dateObj-b.dateObj);
+    const first = ftxns[0], last = ftxns[ftxns.length-1];
+    const opening = first.balance - (first.credit - first.debit);
+    return {file:first.file, opening, closing:last.balance, from:first.dateObj};
+  }).sort((a,b)=>a.from-b.from);
+  const issues = [];
+  for(let i=1;i<fileStats.length;i++){
+    const prev = fileStats[i-1], cur = fileStats[i];
+    const delta = Math.abs(prev.closing - cur.opening);
+    if(delta > 1){
+      issues.push({from:prev.file, to:cur.file, delta, prevClosing:prev.closing, curOpening:cur.opening});
+    }
+  }
+  return {fileStats, issues};
+}
+
+function makeInsightCard(label, value, sub, tone, list){
+  const div = document.createElement('div');
+  div.className = 'icard icard-'+(tone||'muted');
+  div.innerHTML = `<div class="icard-label">${escapeHtml(label)}</div><div class="icard-value">${value}</div><div class="icard-sub">${sub}</div>` +
+    (list ? `<ul class="icard-list">${list.map(x=>`<li>${x}</li>`).join('')}</ul>` : '');
+  return div;
+}
+
+function renderInsights(txns){
+  const grid = document.getElementById('insightGrid');
+  grid.innerHTML = '';
+
+  const balInfo = computeBalanceInsights(txns);
+  grid.appendChild(makeInsightCard('Average Monthly Balance',
+    balInfo ? fmtMoney(balInfo.amb) : 'Not available',
+    balInfo ? `Time-weighted estimate &middot; min balance ${fmtMoney(balInfo.minBal)}` : 'No running balance column detected in the uploaded statement(s).',
+    balInfo ? 'good' : 'muted'));
+
+  const salInfo = computeSalaryInsight(txns);
+  grid.appendChild(makeInsightCard('Salary Credits',
+    salInfo ? fmtMoney(salInfo.mean)+' avg' : 'None detected',
+    salInfo ? `${salInfo.count} credit(s) &middot; ${escapeHtml(salInfo.regularity)} &middot; ${salInfo.cv<0.15?'stable amount':'variable amount'}` : 'No transactions matched the Salary category &mdash; add keywords in Manage rules if needed.',
+    salInfo && salInfo.regularity.indexOf('Regular')===0 ? 'good' : 'warn'));
+
+  const recurring = computeRecurring(txns);
+  const recurringTotal = recurring.reduce((s,r)=>s+r.avgAmount,0);
+  grid.appendChild(makeInsightCard('Recurring Obligations',
+    recurring.length ? fmtMoney(recurringTotal)+' / month' : 'None detected',
+    recurring.length ? `${recurring.length} recurring debit pattern(s) &mdash; likely EMIs/subscriptions` : 'No monthly-recurring debit patterns found.',
+    recurring.length ? 'warn' : 'good',
+    recurring.length ? recurring.slice(0,5).map(r=>`${escapeHtml(r.desc.slice(0,34))} &mdash; ${fmtMoney(r.avgAmount)} / ~${r.avgGapDays}d`) : null));
+
+  const bounce = computeBounceInsight(txns);
+  grid.appendChild(makeInsightCard('Bounce / Penalty Charges',
+    bounce.count ? bounce.count+' occurrence(s)' : 'None found',
+    bounce.count ? `Totalling ${fmtMoney(bounce.total)} &mdash; review before approval` : 'No bounce/penalty keywords matched.',
+    bounce.count ? 'bad' : 'good'));
+
+  const cashPct = computeCashRatio(txns);
+  grid.appendChild(makeInsightCard('Cash Withdrawal Ratio',
+    cashPct.toFixed(1)+'% of debits',
+    cashPct>40 ? 'High cash usage &mdash; harder to verify spending' : 'Within a typical range for salaried/urban accounts',
+    cashPct>40 ? 'warn' : 'good'));
+
+  const outliers = computeOutliers(txns);
+  grid.appendChild(makeInsightCard('High-value Outliers',
+    outliers.items.length ? outliers.items.length+' transaction(s)' : 'None',
+    outliers.items.length ? `Above ${fmtMoney(outliers.threshold)} (&asymp; 3&times; median transaction)` : 'No unusually large single transactions.',
+    outliers.items.length ? 'warn' : 'good',
+    outliers.items.length ? outliers.items.slice(0,5).map(t=>`${escapeHtml(t.date)} &middot; ${escapeHtml(t.description.slice(0,28))} &mdash; ${fmtMoney(Math.max(t.debit,t.credit))}`) : null));
+
+  const dupBanner = document.getElementById('dupBanner');
+  const dupCount = allTxns.filter(t=>t.duplicate).length;
+  if(dupCount>0){
+    const prevBox = document.getElementById('excludeDupToggle');
+    const wasChecked = prevBox ? prevBox.checked : true;
+    dupBanner.innerHTML = `<div class="banner warn">${dupCount} likely duplicate transaction(s) detected across files (same date, amount &amp; description appearing in more than one file). <label class="dup-toggle"><input type="checkbox" id="excludeDupToggle" ${wasChecked?'checked':''}>Exclude duplicates from totals</label></div>`;
+    document.getElementById('excludeDupToggle').addEventListener('change', renderAll);
+  } else {
+    dupBanner.innerHTML = '';
+  }
+
+  const continuity = computeContinuity(txns);
+  const contBanner = document.getElementById('continuityBanner');
+  if(continuity.fileStats.length>=2){
+    if(continuity.issues.length===0){
+      contBanner.innerHTML = `<div class="banner good">Balances reconcile across all ${continuity.fileStats.length} statements that include a running balance column.</div>`;
+    } else {
+      contBanner.innerHTML = continuity.issues.map(i=>`<div class="banner bad">Balance gap between <strong>${escapeHtml(i.from)}</strong> (closing ${fmtMoney(i.prevClosing)}) and <strong>${escapeHtml(i.to)}</strong> (opening ${fmtMoney(i.curOpening)}) &mdash; difference of ${fmtMoney(i.delta)}. Check for a missing statement period.</div>`).join('');
+    }
+  } else {
+    contBanner.innerHTML = '';
+  }
+}
+
+function getCssVar(name){ return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+function destroyChart(key){ if(charts[key]){ charts[key].destroy(); charts[key]=null; } }
+
+function renderCharts(txns){
+  if(typeof Chart === 'undefined') return;
+  const inkSoft = getCssVar('--ink-soft');
+  const gridColor = getCssVar('--surface-border');
+  Chart.defaults.color = inkSoft;
+  Chart.defaults.borderColor = gridColor;
+  Chart.defaults.font.family = "'Inter', sans-serif";
+
+  const monthMap = {};
+  txns.forEach(t=>{
+    if(!t.dateObj) return;
+    const k = monthKey(t.dateObj);
+    if(!monthMap[k]) monthMap[k] = {credit:0, debit:0};
+    monthMap[k].credit += t.credit;
+    monthMap[k].debit += t.debit;
+  });
+  const months = Object.keys(monthMap).sort();
+  destroyChart('cashflow');
+  charts.cashflow = new Chart(document.getElementById('cashflowChart').getContext('2d'), {
+    data:{
+      labels: months.map(monthLabel),
+      datasets:[
+        {type:'bar', label:'Credit', data:months.map(m=>monthMap[m].credit), backgroundColor:'#34D399'},
+        {type:'bar', label:'Debit', data:months.map(m=>monthMap[m].debit), backgroundColor:'#FB7185'},
+        {type:'line', label:'Net', data:months.map(m=>monthMap[m].credit-monthMap[m].debit), borderColor:'#E8B563', backgroundColor:'transparent', tension:.3}
+      ]
+    },
+    options:{ responsive:true, plugins:{legend:{position:'bottom'}}, scales:{ y:{ grid:{color:gridColor}, ticks:{color:inkSoft} }, x:{ grid:{display:false}, ticks:{color:inkSoft} } } }
+  });
+
+  const catMap = {};
+  txns.forEach(t=>{ if(t.debit>0){ catMap[t.category]=(catMap[t.category]||0)+t.debit; } });
+  const catEntries = Object.entries(catMap).sort((a,b)=>b[1]-a[1]);
+  const top = catEntries.slice(0,7);
+  const restSum = catEntries.slice(7).reduce((s,e)=>s+e[1],0);
+  if(restSum>0) top.push(['Other', restSum]);
+  destroyChart('category');
+  const palette = ['#E8B563','#34D399','#17C9A8','#6C5CE7','#FB7185','#F59E0B','#60A5FA','#F472B6'];
+  charts.category = new Chart(document.getElementById('categoryDonut').getContext('2d'), {
+    type:'doughnut',
+    data:{ labels:top.map(e=>e[0]), datasets:[{ data:top.map(e=>e[1]), backgroundColor:palette, borderWidth:0 }] },
+    options:{ responsive:true, plugins:{legend:{position:'right', labels:{boxWidth:12}}} }
+  });
+
+  const withBal = txns.filter(t=>t.balance!=null && t.dateObj).sort((a,b)=>a.dateObj-b.dateObj);
+  const balCard = document.getElementById('balanceChartCard');
+  if(withBal.length>=2){
+    balCard.style.display='';
+    destroyChart('balance');
+    charts.balance = new Chart(document.getElementById('balanceChart').getContext('2d'), {
+      type:'line',
+      data:{ labels: withBal.map(t=>t.date), datasets:[{ label:'Balance', data:withBal.map(t=>t.balance), borderColor:'#6C5CE7', backgroundColor:'rgba(108,92,231,.12)', fill:true, tension:.25, pointRadius:0 }] },
+      options:{ responsive:true, plugins:{legend:{display:false}}, scales:{ y:{ grid:{color:gridColor}, ticks:{color:inkSoft} }, x:{ grid:{display:false}, ticks:{color:inkSoft, maxTicksLimit:8} } } }
+    });
+  } else {
+    balCard.style.display='none';
+  }
+}
+
+// ---- Editable transaction cells ----
+function attachTextEdit(td, txn, field, applyFn){
+  td.addEventListener('click', function(){
+    if(td.querySelector('input')) return;
+    const current = txn[field];
+    td.innerHTML = '';
+    const input = document.createElement('input');
+    input.type='text'; input.value=current; input.className='cell-input';
+    td.appendChild(input);
+    input.focus(); input.select();
+    function commit(){
+      applyFn(input.value.trim());
+      txn.uncertain = false;
+      renderAll();
+    }
+    input.addEventListener('blur', commit);
+    input.addEventListener('keydown', e=>{ if(e.key==='Enter') input.blur(); });
+  });
+}
+function attachNumEdit(td, txn, field){
+  td.addEventListener('click', function(){
+    if(td.querySelector('input')) return;
+    const current = txn[field];
+    td.innerHTML = '';
+    const input = document.createElement('input');
+    input.type='text'; input.value = current || ''; input.className='cell-input';
+    td.appendChild(input);
+    input.focus(); input.select();
+    function commit(){
+      txn[field] = num(input.value);
+      txn.edited = true;
+      txn.uncertain = false;
+      renderAll();
+    }
+    input.addEventListener('blur', commit);
+    input.addEventListener('keydown', e=>{ if(e.key==='Enter') input.blur(); });
+  });
+}
+function buildCategorySelect(t, catOptions){
+  const sel = document.createElement('select');
+  sel.className = 'cell-select';
+  const opts = catOptions.includes(t.category) ? catOptions : catOptions.concat([t.category]);
+  opts.forEach(c=>{
+    const opt = document.createElement('option');
+    opt.value = c; opt.textContent = c;
+    if(c===t.category) opt.selected = true;
+    sel.appendChild(opt);
+  });
+  sel.addEventListener('change', ()=>{ t.category = sel.value; t.manualCategory = true; t.edited = true; renderAll(); });
+  return sel;
+}
+
+function renderTxnTable(){
+  const search = document.getElementById('searchBox').value.toUpperCase();
+  const catF = document.getElementById('categoryFilter').value;
+  const typeF = document.getElementById('typeFilter').value;
+  const fileF = document.getElementById('fileFilter').value;
+  const excludeBox = document.getElementById('excludeDupToggle');
+  const excludeDup = excludeBox ? excludeBox.checked : false;
+
+  const filtered = allTxns.filter(t => {
+    if(excludeDup && t.duplicate) return false;
+    if(search && !t.description.toUpperCase().includes(search)) return false;
+    if(catF && t.category !== catF) return false;
+    if(typeF==='credit' && t.credit<=0) return false;
+    if(typeF==='debit' && t.debit<=0) return false;
+    if(fileF && String(t.fileId) !== fileF) return false;
+    return true;
+  });
+
+  const body = document.querySelector('#txnTable tbody');
+  body.innerHTML = '';
+  const catOptions = Array.from(new Set(rules.map(r=>r.category).concat(['Other'])));
+
+  filtered.slice(0,500).forEach(t => {
+    const tr = document.createElement('tr');
+    if(t.duplicate) tr.classList.add('row-duplicate');
+
+    const dateTd = document.createElement('td');
+    dateTd.textContent = t.date;
+    dateTd.className = 'editable-cell';
+    attachTextEdit(dateTd, t, 'date', v=>{ t.date=v; t.dateObj=parseDate(v); t.edited=true; });
+
+    const descTd = document.createElement('td');
+    descTd.textContent = t.description;
+    descTd.className = 'editable-cell';
+    attachTextEdit(descTd, t, 'description', v=>{ t.description=v; t.edited=true; if(!t.manualCategory) t.category=categorize(v); });
+    if(t.duplicate){
+      const b = document.createElement('span'); b.className='badge-dup'; b.textContent='DUP';
+      b.title = 'Looks like a duplicate of a transaction in another file';
+      descTd.appendChild(b);
+    }
+    if(t.edited){
+      const b = document.createElement('span'); b.className='badge-edited'; b.textContent='edited';
+      descTd.appendChild(b);
+    }
+
+    const fileTd = document.createElement('td');
+    fileTd.style.cssText = 'font-family:var(--mono);font-size:11px;color:var(--ink-soft);';
+    fileTd.textContent = t.file;
+
+    const debitTd = document.createElement('td');
+    debitTd.className = 'num editable-cell';
+    debitTd.style.color = 'var(--stamp-red)';
+    debitTd.textContent = t.debit ? fmtMoney(t.debit) : '';
+    if(t.uncertain){
+      const b = document.createElement('span'); b.className='badge-uncertain'; b.textContent=' ?';
+      b.title = t.uncertainReason || 'Heuristically parsed — verify manually';
+      debitTd.appendChild(b);
+    }
+    attachNumEdit(debitTd, t, 'debit');
+
+    const creditTd = document.createElement('td');
+    creditTd.className = 'num editable-cell';
+    creditTd.style.color = 'var(--stamp-green)';
+    creditTd.textContent = t.credit ? fmtMoney(t.credit) : '';
+    attachNumEdit(creditTd, t, 'credit');
+
+    const catTd = document.createElement('td');
+    catTd.appendChild(buildCategorySelect(t, catOptions));
+
+    tr.appendChild(dateTd); tr.appendChild(descTd); tr.appendChild(fileTd);
+    tr.appendChild(debitTd); tr.appendChild(creditTd); tr.appendChild(catTd);
+    body.appendChild(tr);
+  });
+  if(filtered.length > 500){
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.colSpan = 6;
+    td.style.cssText = 'text-align:center;font-family:var(--mono);color:var(--ink-soft);';
+    td.textContent = `Showing first 500 of ${filtered.length} matching entries — refine filters or export CSV for the full list.`;
+    tr.appendChild(td);
+    body.appendChild(tr);
+  }
+}
+
+['searchBox'].forEach(id => document.getElementById(id).addEventListener('input', renderTxnTable));
+['categoryFilter','typeFilter','fileFilter'].forEach(id => document.getElementById(id).addEventListener('change', renderTxnTable));
+
+function renderAll(){
+  const hasData = allTxns.length > 0;
+  document.getElementById('emptyState').style.display = hasData ? 'none' : 'block';
+  document.getElementById('results').style.display = hasData ? 'block' : 'none';
+  if(!hasData) return;
+
+  computeDuplicates();
+
+  const prevToggle = document.getElementById('excludeDupToggle');
+  const excludeDup = prevToggle ? prevToggle.checked : true;
+  const activeTxns = excludeDup ? allTxns.filter(t=>!t.duplicate) : allTxns.slice();
+
+  const totalCredit = activeTxns.reduce((s,t)=>s+t.credit,0);
+  const totalDebit = activeTxns.reduce((s,t)=>s+t.debit,0);
+  document.getElementById('totalCredit').textContent = fmtMoney(totalCredit);
+  document.getElementById('totalDebit').textContent = fmtMoney(totalDebit);
+  document.getElementById('netTotal').textContent = fmtMoney(totalCredit-totalDebit);
+  document.getElementById('creditCount').textContent = activeTxns.filter(t=>t.credit>0).length + ' entries';
+  document.getElementById('debitCount').textContent = activeTxns.filter(t=>t.debit>0).length + ' entries';
+  document.getElementById('txnCount').textContent = activeTxns.length + ' total entries' +
+    (excludeDup && allTxns.length!==activeTxns.length ? ` (${allTxns.length-activeTxns.length} duplicate excluded)` : '');
+
+  const cats = {};
+  activeTxns.forEach(t => {
+    if(!cats[t.category]) cats[t.category] = {credit:0, debit:0, count:0};
+    cats[t.category].credit += t.credit;
+    cats[t.category].debit += t.debit;
+    cats[t.category].count += 1;
+  });
+  const maxDebit = Math.max(...Object.values(cats).map(c=>c.debit), 1);
+  const catBody = document.querySelector('#categoryTable tbody');
+  catBody.innerHTML = '';
+  Object.entries(cats).sort((a,b)=>b[1].debit+b[1].credit-(a[1].debit+a[1].credit)).forEach(([cat, v]) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${escapeHtml(cat)}</td>
+      <td class="num" style="color:var(--stamp-green)">${v.credit?fmtMoney(v.credit):'–'}</td>
+      <td class="num" style="color:var(--stamp-red)">${v.debit?fmtMoney(v.debit):'–'}</td>
+      <td class="num">${v.count}</td>
+      <td><div class="bar-row"><div class="bar-track"><div class="bar-fill debit" style="width:${(v.debit/maxDebit*100).toFixed(0)}%"></div></div></div></td>
+    `;
+    catBody.appendChild(tr);
+  });
+
+  const catFilter = document.getElementById('categoryFilter');
+  const currentCat = catFilter.value;
+  catFilter.innerHTML = '<option value="">All categories</option>' + Object.keys(cats).sort().map(c=>`<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+  catFilter.value = currentCat;
+
+  const fileFilter = document.getElementById('fileFilter');
+  const currentFile = fileFilter.value;
+  fileFilter.innerHTML = '<option value="">All files</option>' + files.map(f=>`<option value="${f.id}">${escapeHtml(f.label)}</option>`).join('');
+  fileFilter.value = currentFile;
+
+  renderInsights(activeTxns);
+  renderCharts(activeTxns);
+  renderTxnTable();
+}
+
+// ---- File ingestion ----
+function readArrayBuffer(f){
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = e => resolve(e.target.result);
+    reader.onerror = reject;
+    reader.readAsArrayBuffer(f);
+  });
+}
+function readAsText(f){
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = e => resolve(e.target.result);
+    reader.onerror = reject;
+    reader.readAsText(f);
+  });
+}
+
+function renderFileChips(){
+  const list = document.getElementById('fileList');
+  list.innerHTML = '';
+  files.forEach((f, idx) => {
+    const chip = document.createElement('div');
+    chip.className = 'chip';
+    const span = document.createElement('span');
+    span.textContent = `${f.label} — ${f.count} entries`;
+    if(f.warnings && f.warnings.length){
+      const w = document.createElement('span');
+      w.className = 'badge-warn'; w.textContent = ' !';
+      w.title = f.warnings.join(' | ');
+      span.appendChild(w);
+    }
+    const btn = document.createElement('button');
+    btn.textContent = '×'; btn.dataset.idx = idx;
+    chip.appendChild(span); chip.appendChild(btn);
+    list.appendChild(chip);
+  });
+  list.querySelectorAll('button').forEach(btn => {
+    btn.addEventListener('click', e => {
+      const idx = +e.target.dataset.idx;
+      const removed = files[idx];
+      allTxns = allTxns.filter(t => t.fileId !== removed.id);
+      files.splice(idx,1);
+      renderFileChips();
+      renderWarningsPanel();
+      renderAll();
+    });
+  });
+}
+
+function renderWarningsPanel(){
+  const panel = document.getElementById('warningsPanel');
+  const all = [];
+  files.forEach(f => (f.warnings||[]).forEach(w => all.push(`${f.name}: ${w}`)));
+  const debugFiles = files.filter(f => f.debugLines && f.debugLines.length);
+  if(all.length===0 && debugFiles.length===0){ panel.style.display='none'; panel.innerHTML=''; return; }
+  panel.style.display = 'block';
+  let html = all.length ? `<strong>Parse warnings (${all.length})</strong><ul>${all.map(w=>`<li>${escapeHtml(w)}</li>`).join('')}</ul>` : '';
+  debugFiles.forEach(f => {
+    html += `<details style="margin-top:10px;"><summary style="cursor:pointer;font-weight:600;">Show raw extracted text for "${escapeHtml(f.name)}" (debug)</summary>
+      <pre style="white-space:pre-wrap;font-family:var(--mono);font-size:11px;max-height:260px;overflow:auto;background:var(--card);border:1px solid var(--surface-border);border-radius:8px;padding:10px;margin-top:8px;">${escapeHtml(f.debugLines.join('\n'))}</pre>
+      <p style="font-size:11px;color:var(--ink-soft);margin-top:4px;">This is exactly what the parser read from the file, line by line, before trying to match dates/amounts. Copy a couple of these lines if you need help getting this format recognized.</p>
+    </details>`;
+  });
+  panel.innerHTML = html;
+}
+
+async function handleFiles(fileListObj){
+  const arr = Array.from(fileListObj);
+  let anyPdf = false, anyImage = false;
+  const statusEl = document.getElementById('processingStatus');
+  for(const f of arr){
+    const isPdf = /\.pdf$/i.test(f.name);
+    const isImage = /\.(jpe?g|png|webp)$/i.test(f.name);
+    const isCsv = /\.csv$/i.test(f.name);
+    if(isPdf) anyPdf = true;
+    if(isImage) anyImage = true;
+    statusEl.style.display = 'block';
+    statusEl.textContent = `Reading ${f.name}...`;
+    const fileId = fileSeq++;
+    try{
+      let result;
+      if(isImage){
+        result = await parseImageFile(f, f.name, (m)=>{
+          if(m.status==='recognizing text'){
+            statusEl.textContent = `OCR ${f.name}: ${Math.round(m.progress*100)}%`;
+          }
+        });
+      } else if(isPdf){
+        const buf = await readArrayBuffer(f);
+        result = await parsePdfFile(buf, f.name, (p)=>{
+          if(p.stage==='text'){
+            statusEl.textContent = `Reading ${f.name}: page ${p.page}/${p.total}...`;
+          } else if(p.stage==='ocr'){
+            statusEl.textContent = `${f.name} has no text layer — OCR fallback: page ${p.page}/${p.total} (${Math.round((p.progress||0)*100)}%)`;
+          }
+        });
+      } else if(isCsv){
+        const text = await readAsText(f);
+        result = parseCsvText(text, f.name);
+      } else {
+        const buf = await readArrayBuffer(f);
+        const wb = XLSX.read(new Uint8Array(buf), {type:'array'});
+        result = parseWorkbook(wb, f.name);
+      }
+      result.txns.forEach(t => t.fileId = fileId);
+      files.push({
+        id: fileId,
+        name: f.name,
+        label: f.name + (isPdf ? ' (PDF · heuristic)' : isImage ? ' (Image · OCR)' : ''),
+        count: result.txns.length,
+        warnings: result.warnings,
+        debugLines: result.debugLines || null
+      });
+      allTxns = allTxns.concat(result.txns);
+    }catch(err){
+      console.error('Parse error for', f.name, err);
+      files.push({id: fileId, name:f.name, label:f.name+' (failed to read)', count:0, warnings:['File could not be read: '+err.message]});
+    }
+  }
+  statusEl.style.display = 'none';
+  if(anyPdf || anyImage) document.getElementById('parseNote').style.display = 'block';
+  renderFileChips();
+  renderWarningsPanel();
+  renderAll();
+}
+
+document.getElementById('exportBtn').addEventListener('click', () => {
+  const rows = [['Date','Description','Source File','Debit','Credit','Category','Balance','Duplicate','Uncertain']];
+  allTxns.forEach(t => rows.push([t.date, t.description, t.file, t.debit||'', t.credit||'', t.category, t.balance!=null?t.balance:'', t.duplicate?'Y':'', t.uncertain?'Y':'']));
+  const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv], {type:'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'categorised-transactions.csv';
+  a.click();
+});
+
+document.getElementById('resetBtn').addEventListener('click', () => {
+  files = [];
+  allTxns = [];
+  ['cashflow','category','balance'].forEach(destroyChart);
+  renderFileChips();
+  renderWarningsPanel();
+  renderAll();
+});
+
+const dz = document.getElementById('dropzone');
+const fi = document.getElementById('fileInput');
+dz.addEventListener('click', () => fi.click());
+fi.addEventListener('change', e => handleFiles(e.target.files));
+['dragenter','dragover'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add('drag'); }));
+['dragleave','drop'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove('drag'); }));
+dz.addEventListener('drop', e => { if(e.dataTransfer.files.length) handleFiles(e.dataTransfer.files); });
+
+loadRules();
+</script>
+</body>
+</html>
