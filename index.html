@@ -865,8 +865,15 @@ async function parsePdfFile(arrayBuffer, filename, onProgress){
     lastBalance = result.lastBalance;
   }
 
+  const OCR_PAGE_LIMIT = 8;
   if(txns.length===0){
-    if(!anyTextAtAll && typeof Tesseract !== 'undefined'){
+    if(!anyTextAtAll && pdf.numPages > OCR_PAGE_LIMIT){
+      // Don't make someone sit through 10+ minutes of in-browser OCR on a long
+      // scanned statement only to maybe still fail — tell them what to do
+      // right away instead. Short scans/photos (a page or two) are still
+      // worth trying automatically below.
+      warnings.push(`This is a ${pdf.numPages}-page scanned PDF with no readable text layer — running OCR on all of it in this browser would take a long time and isn't guaranteed to work. Fastest options: ask for a CSV/Excel export of this statement instead, or send this file to whoever set up this tool for a quick offline conversion.`);
+    } else if(!anyTextAtAll && typeof Tesseract !== 'undefined'){
       // This PDF has no usable text layer at all — common with Indian bank
       // statement generators that embed fonts with broken Unicode maps, so the
       // page looks normal but pdf.js can't read a single character from it.
